@@ -15,10 +15,11 @@ Built for modern AMD (Ryzen / Threadripper / EPYC) and Intel (Core / Xeon) platf
 * **Instant SMT / Hyperthreading Toggle:** Enable or disable SMT/HT on the fly with a single command.
 
 ### 2. Tailored Governor & Frequency Profiles
+* **`max`:** All online cores locked to `performance` governor at maximum Turbo clock (zero ramp latency).
 * **`fast`:** All online cores on `schedutil` with full Turbo / Boost enabled (supports Intel Turbo Boost and AMD Core Performance Boost / CPB).
 * **`base [GHz]` (or `noboost`):** All online cores on `schedutil` clamped strictly to base frequency (auto-detected, or customizable e.g. `cpu-profile base 2.5`, 0% Turbo). Ideal for cool, quiet multi-threaded crunching.
 * **`eco`:** All online cores locked to `powersave` at hardware minimum frequency (~24W package idle floor).
-* **`split [N]`:** Automated asymmetric cluster. Keeps primary cores fast at max turbo while locking secondary cores at powersave for background tasks or AFK games.
+* **`split [N] [max|fast]`:** Automated asymmetric cluster. Keeps primary cores at max turbo (using either `performance` governor for locked clock or `schedutil` for dynamic scaling) while locking secondary cores at powersave for background tasks or AFK games.
 
 ### 3. Automated Multi-Thread Game Pinning (`game-pin`)
 * **Auto-Detection:** Automatically discovers running game processes, Steam Proton containers (`pressure-vessel`, `srt-bwrap`), Wine executables (`*.exe`), and `wineserver`.
@@ -67,6 +68,9 @@ cpu-profile ht on
 ### Governor & Clock Profiles
 
 ```bash
+# Maximum Performance mode (All cores locked to Performance governor @ max Turbo)
+cpu-profile max
+
 # Full Performance mode (Schedutil with Turbo / Boost)
 cpu-profile fast
 
@@ -84,6 +88,9 @@ cpu-profile split
 
 # Custom split (e.g., 8 fast cores, remainder eco)
 cpu-profile split 8
+
+# Split mode with locked Performance governor on primary 4 cores
+cpu-profile split 4 max
 
 # View live governor, frequency cap, and core status
 cpu-profile status

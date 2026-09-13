@@ -382,7 +382,7 @@ case "$1" in
         exit 0
         ;;
     *)
-        echo "Usage: cpu-profile [cores <N|all>|ht <on|off>|fast|base [GHz]|eco|split [N]|status|pin [eco|fast|all]|uninstall]"
+        echo "Usage: cpu-profile [cores <N|all>|ht <on|off>|max|fast|base [GHz]|eco|split [N] [mode]|status|pin [eco|fast|all]|uninstall]"
         echo ""
         echo "Hardware Control (No Reboot Needed!):"
         echo "  cpu-profile cores <N>     : Sets active physical cores to N (1-$max_phys), power-gates rest to 0W"
@@ -390,10 +390,11 @@ case "$1" in
         echo "  cpu-profile ht [on|off]   : Toggles Hyperthreading / SMT on the fly"
         echo ""
         echo "Governor Profiles:"
-        echo "  cpu-profile fast          : All online threads on Schedutil (Full Turbo Boost)"
+        echo "  cpu-profile max           : All online threads on Performance governor (Locked max Turbo clock)"
+        echo "  cpu-profile fast          : All online threads on Schedutil (Dynamic Turbo Boost)"
         echo "  cpu-profile base [GHz]    : All online threads on Schedutil capped at base clock (No Boost, cool & quiet)"
         echo "  cpu-profile eco           : All online threads on Powersave (minimum clock locked, lowest power)"
-        echo "  cpu-profile split [N]     : N Fast Physical Cores + remaining Eco Cores"
+        echo "  cpu-profile split [N] [mode] : N Primary Cores (mode: max|fast) + remaining Eco Cores"
         echo "  cpu-profile status        : Show current core online/offline status, max cap, and live MHz"
         echo ""
         echo "Instant Thread Pinning (Auto-detects Game, No Sudo Needed!):"

@@ -310,21 +310,38 @@ case "$1" in
         ;;
     split)
         set_turbo 1
-        get_split_masks "$2"
+        
+        split_count=""
+        split_gov="schedutil"
+        split_label="Schedutil"
+        
+        for arg in "$2" "$3"; do
+            if [[ "$arg" =~ ^[0-9]+$ ]]; then
+                split_count="$arg"
+            elif [[ "$arg" =~ ^(max|perf|performance)$ ]]; then
+                split_gov="performance"
+                split_label="Performance (Locked)"
+            elif [[ "$arg" =~ ^(fast|schedutil)$ ]]; then
+                split_gov="schedutil"
+                split_label="Schedutil"
+            fi
+        done
+        
+        get_split_masks "$split_count"
         
         IFS=',' read -r -a fast_cpus <<< "$FAST_MASK"
-        IFS=',' read -r -a eco_cpus <<< "$ECO_MASK"
-
         for c in "${fast_cpus[@]}"; do
             echo "$hw_max" | sudo tee "/sys/devices/system/cpu/cpu$c/cpufreq/scaling_max_freq" > /dev/null
-            echo schedutil | sudo tee "/sys/devices/system/cpu/cpu$c/cpufreq/scaling_governor" > /dev/null
+            echo "$split_gov" | sudo tee "/sys/devices/system/cpu/cpu$c/cpufreq/scaling_governor" > /dev/null
         done
+        
+        IFS=',' read -r -a eco_cpus <<< "$ECO_MASK"
         for c in "${eco_cpus[@]}"; do
             echo "$hw_max" | sudo tee "/sys/devices/system/cpu/cpu$c/cpufreq/scaling_max_freq" > /dev/null
             echo powersave | sudo tee "/sys/devices/system/cpu/cpu$c/cpufreq/scaling_governor" > /dev/null
         done
         
-        echo "CPU Mode: Split ($FAST_PHYS_COUNT Physical Cores @ Schedutil, $ECO_PHYS_COUNT Physical Cores @ Powersave)"
+        echo "CPU Mode: Split ($FAST_PHYS_COUNT Physical Cores @ $split_label, $ECO_PHYS_COUNT Physical Cores @ Powersave)"
         show_status
         ;;
     max|perf|performance)

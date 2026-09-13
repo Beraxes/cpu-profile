@@ -8,13 +8,15 @@ set -e
 INSTALL_DIR="${HOME}/.local/bin"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-if [ "$1" = "--uninstall" ]; then
-    echo "Uninstalling cpu-profile and game-pin from ${INSTALL_DIR}..."
-    rm -f "${INSTALL_DIR}/cpu-profile"
-    rm -f "${INSTALL_DIR}/game-pin"
-    echo "Uninstalled successfully."
-    exit 0
-fi
+# ponytail: simple arg check handles uninstall, --uninstall, and -u
+case "$1" in
+    uninstall|--uninstall|-u)
+        echo "Uninstalling cpu-profile and game-pin from ${INSTALL_DIR}..."
+        rm -f "${INSTALL_DIR}/cpu-profile" "${INSTALL_DIR}/game-pin"
+        echo "Uninstalled successfully."
+        exit 0
+        ;;
+esac
 
 echo "==> Installing cpu-profile & game-pin..."
 

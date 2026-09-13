@@ -285,8 +285,15 @@ case "$1" in
     status)
         show_status
         ;;
+    uninstall)
+        # ponytail: direct self-uninstall, no extra scripts needed
+        echo "Uninstalling cpu-profile and game-pin from ${HOME}/.local/bin..."
+        rm -f "${HOME}/.local/bin/cpu-profile" "${HOME}/.local/bin/game-pin"
+        echo "Uninstalled successfully."
+        exit 0
+        ;;
     *)
-        echo "Usage: cpu-profile [cores <N|all>|ht <on|off>|fast|base|eco|split [N]|status|pin [eco|fast|all]]"
+        echo "Usage: cpu-profile [cores <N|all>|ht <on|off>|fast|base|eco|split [N]|status|pin [eco|fast|all]|uninstall]"
         echo ""
         echo "Hardware Control (No Reboot Needed!):"
         echo "  cpu-profile cores <N>     : Sets active physical cores to N (e.g. 10 or 12), power-gates the rest to 0W"
@@ -304,5 +311,8 @@ case "$1" in
         echo "  game-pin fast             : Moves ALL threads of the game to Fast Cores"
         echo "  game-pin eco              : Moves ALL threads of the game to Eco Cores"
         echo "  game-pin all              : Unpins game back to all online threads"
+        echo ""
+        echo "Maintenance:"
+        echo "  cpu-profile uninstall     : Removes cpu-profile and game-pin from ~/.local/bin"
         ;;
 esac

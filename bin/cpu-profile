@@ -89,6 +89,11 @@ show_status() {
             printf "CPU %-2d (Core %-2s)  %-10s  (Max: %-7s)  %s\n" "$i" "$phys" "$gov" "$maxf" "$freq"
         fi
     done
+
+    # ponytail: notify user if CoreCtrl is running to prevent silent override confusion
+    if pgrep -x corectrl >/dev/null 2>&1; then
+        echo "⚠️  Note: CoreCtrl is running. Ensure CPU control is disabled in CoreCtrl to avoid overrides."
+    fi
 }
 
 set_active_cores() {

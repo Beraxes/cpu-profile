@@ -132,6 +132,20 @@ CPU 11 (Core --)  [OFFLINE]   (Power-Gated)    0 MHz (0W Sleep)
 
 ---
 
+## Uninstallation
+
+From the command line:
+```bash
+cpu-profile uninstall
+```
+
+Or from the cloned repository:
+```bash
+./install.sh uninstall
+```
+
+---
+
 ## License
 
 MIT License. See [LICENSE](LICENSE) for details.

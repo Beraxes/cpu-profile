@@ -1,0 +1,308 @@
+#!/usr/bin/env bash
+
+# Total possible logical threads present in hardware/sysfs
+total_possible=$(ls -d /sys/devices/system/cpu/cpu[0-9]* | wc -l)
+
+get_max_hardware_freq() {
+    local mf
+    mf=$(cat /sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq 2>/dev/null)
+    [ -z "$mf" ] && mf=3800000
+    echo "$mf"
+}
+
+get_split_masks() {
+    local target_fast="$1"
+    local online_phys=()
+    local temp_list=()
+    for cpu_dir in /sys/devices/system/cpu/cpu[0-9]*; do
+        local is_online="1"
+        [ -f "$cpu_dir/online" ] && is_online=$(cat "$cpu_dir/online" 2>/dev/null)
+        if [ "$is_online" = "1" ]; then
+            local p=$(cat "$cpu_dir/topology/core_id" 2>/dev/null)
+            [ -n "$p" ] && temp_list+=("$p")
+        fi
+    done
+    online_phys=($(printf '%s\n' "${temp_list[@]}" | sort -n -u))
+    local total_online_phys=${#online_phys[@]}
+
+    [ -z "$target_fast" ] && target_fast=$(( total_online_phys / 2 ))
+    [ "$target_fast" -ge "$total_online_phys" ] && target_fast=$(( total_online_phys - 1 ))
+    [ "$target_fast" -le 0 ] && target_fast=1
+
+    local fast_list=()
+    local eco_list=()
+
+    # Find the CPUs belonging to the fast physical cores
+    for ((idx=0; idx<target_fast; idx++)); do
+        local pcore="${online_phys[$idx]}"
+        for cpu_dir in /sys/devices/system/cpu/cpu[0-9]*; do
+            local is_online="1"
+            [ -f "$cpu_dir/online" ] && is_online=$(cat "$cpu_dir/online" 2>/dev/null)
+            if [ "$is_online" = "1" ]; then
+                local p=$(cat "$cpu_dir/topology/core_id" 2>/dev/null)
+                if [ "$p" = "$pcore" ]; then
+                    local cnum=$(basename "$cpu_dir" | sed 's/cpu//')
+                    fast_list+=("$cnum")
+                fi
+            fi
+        done
+    done
+
+    # Find the CPUs belonging to the eco physical cores
+    for ((idx=target_fast; idx<total_online_phys; idx++)); do
+        local pcore="${online_phys[$idx]}"
+        for cpu_dir in /sys/devices/system/cpu/cpu[0-9]*; do
+            local is_online="1"
+            [ -f "$cpu_dir/online" ] && is_online=$(cat "$cpu_dir/online" 2>/dev/null)
+            if [ "$is_online" = "1" ]; then
+                local p=$(cat "$cpu_dir/topology/core_id" 2>/dev/null)
+                if [ "$p" = "$pcore" ]; then
+                    local cnum=$(basename "$cpu_dir" | sed 's/cpu//')
+                    eco_list+=("$cnum")
+                fi
+            fi
+        done
+    done
+
+    FAST_MASK=$(printf '%s\n' "${fast_list[@]}" | sort -n -u | paste -sd, -)
+    ECO_MASK=$(printf '%s\n' "${eco_list[@]}" | sort -n -u | paste -sd, -)
+    FAST_PHYS_COUNT="$target_fast"
+    ECO_PHYS_COUNT=$(( total_online_phys - target_fast ))
+}
+
+show_status() {
+    local online_count=$(nproc)
+    local smt_state=$(cat /sys/devices/system/cpu/smt/control 2>/dev/null)
+    echo "Current CPU Status: $online_count Threads Online (Out of $total_possible) | HT/SMT: $smt_state"
+    for ((i=0; i<total_possible; i++)); do
+        local is_online="1"
+        [ -f "/sys/devices/system/cpu/cpu$i/online" ] && is_online=$(cat "/sys/devices/system/cpu/cpu$i/online" 2>/dev/null)
+        local phys=$(cat "/sys/devices/system/cpu/cpu$i/topology/core_id" 2>/dev/null)
+        [ -z "$phys" ] && phys="--"
+        
+        if [ "$is_online" = "0" ]; then
+            printf "CPU %-2d (Core %-2s)  %-10s  %-15s  %s\n" "$i" "$phys" "[OFFLINE]" "(Power-Gated)" "0 MHz (0W Sleep)"
+        else
+            local gov=$(cat "/sys/devices/system/cpu/cpu$i/cpufreq/scaling_governor" 2>/dev/null)
+            local freq=$(awk '{printf "%.0f MHz", $1/1000}' "/sys/devices/system/cpu/cpu$i/cpufreq/scaling_cur_freq" 2>/dev/null)
+            local maxf=$(awk '{printf "%.1f GHz", $1/1000000}' "/sys/devices/system/cpu/cpu$i/cpufreq/scaling_max_freq" 2>/dev/null)
+            printf "CPU %-2d (Core %-2s)  %-10s  (Max: %-7s)  %s\n" "$i" "$phys" "$gov" "$maxf" "$freq"
+        fi
+    done
+}
+
+set_active_cores() {
+    local target="$1"
+    local max_phys=18
+    
+    if [ "$target" = "all" ] || [ "$target" -ge "$max_phys" ] 2>/dev/null; then
+        echo "Bringing ALL $max_phys physical cores online..."
+        for g in /sys/devices/system/cpu/cpu*/online; do
+            echo 1 | sudo tee "$g" > /dev/null 2>&1
+        done
+        show_status
+        return 0
+    fi
+    
+    if [ "$target" -lt 1 ] 2>/dev/null; then
+        echo "Usage: cpu-profile cores [1-18|all]"
+        return 1
+    fi
+    
+    echo "Setting active physical cores to $target (power-gating $((max_phys - target)) physical cores to 0W)..."
+    
+    # Enable target cores
+    for ((c=0; c<target; c++)); do
+        for sib in $(cat "/sys/devices/system/cpu/cpu$c/topology/thread_siblings_list" 2>/dev/null | tr "," " "); do
+            [ -f "/sys/devices/system/cpu/cpu$sib/online" ] && echo 1 | sudo tee "/sys/devices/system/cpu/cpu$sib/online" > /dev/null 2>&1
+        done
+    done
+    
+    # Offline remaining cores
+    for ((c=target; c<max_phys; c++)); do
+        for sib in $(cat "/sys/devices/system/cpu/cpu$c/topology/thread_siblings_list" 2>/dev/null | tr "," " "); do
+            [ -f "/sys/devices/system/cpu/cpu$sib/online" ] && echo 0 | sudo tee "/sys/devices/system/cpu/cpu$sib/online" > /dev/null 2>&1
+        done
+    done
+    
+    show_status
+}
+
+set_ht() {
+    local state="$1"
+    case "$state" in
+        on|enable|enabled)
+            echo "Enabling Hyperthreading (SMT)..."
+            echo on | sudo tee /sys/devices/system/cpu/smt/control > /dev/null 2>&1
+            show_status
+            ;;
+        off|disable|disabled)
+            echo "Disabling Hyperthreading (SMT)..."
+            echo off | sudo tee /sys/devices/system/cpu/smt/control > /dev/null 2>&1
+            show_status
+            ;;
+        *)
+            echo "Usage: cpu-profile ht [on|off]"
+            ;;
+    esac
+}
+
+find_game_pids() {
+    local target="$1"
+    if [ -n "$target" ]; then
+        if [[ "$target" =~ ^[0-9]+$ ]]; then
+            echo "$target"
+        else
+            pgrep -fi "$target"
+        fi
+    else
+        # Auto-detect running game .exe and wineserver (excluding windows system services)
+        pgrep -f '\.exe' | while read -r p; do
+            comm=$(ps -p "$p" -o comm= 2>/dev/null)
+            if [[ ! "$comm" =~ (services|svchost|rpcss|plugplay|explorer|winedevice|tabtip|conhost|rtk|bash|python) ]]; then
+                echo "$p"
+            fi
+        done
+        pgrep -x wineserver
+    fi
+}
+
+pin_processes() {
+    local mode="$1"
+    local target="$2"
+    local cores=""
+    local mode_label=""
+
+    get_split_masks
+
+    case "$mode" in
+        eco)
+            cores="$ECO_MASK"
+            mode_label="Eco Cores ($cores @ 1.2 GHz powersave)"
+            ;;
+        fast|perf|performance)
+            cores="$FAST_MASK"
+            mode_label="Fast Cores ($cores @ 3.8 GHz schedutil)"
+            ;;
+        all|unpin)
+            cores=$(cat /sys/devices/system/cpu/online 2>/dev/null)
+            mode_label="All Online Cores ($cores)"
+            ;;
+        *)
+            echo "Usage: $(basename "$0") [eco|fast|all] [process_name|PID]"
+            return 1
+            ;;
+    esac
+
+    local pids
+    pids=$(find_game_pids "$target" | sort -u)
+
+    if [ -z "$pids" ]; then
+        echo "No running game or matching process found."
+        return 1
+    fi
+
+    echo "Moving all threads to $mode_label:"
+    for p in $pids; do
+        if [ -d "/proc/$p" ] && [ "$p" != "$$" ] && [ "$p" != "$PPID" ]; then
+            comm=$(ps -p "$p" -o comm= 2>/dev/null)
+            taskset -a -pc "$cores" "$p" > /dev/null 2>&1
+            echo "  ✓ PID $p ($comm): all threads pinned to $cores"
+        fi
+    done
+}
+
+# If invoked directly as 'game-pin'
+if [ "$(basename "$0")" = "game-pin" ]; then
+    pin_processes "$1" "$2"
+    exit $?
+fi
+
+hw_max=$(get_max_hardware_freq)
+
+case "$1" in
+    cores|core)
+        set_active_cores "$2"
+        ;;
+    ht|smt)
+        set_ht "$2"
+        ;;
+    eco)
+        [ -f /sys/devices/system/cpu/intel_pstate/no_turbo ] && echo 0 | sudo tee /sys/devices/system/cpu/intel_pstate/no_turbo > /dev/null 2>&1
+        for ((i=0; i<total_possible; i++)); do
+            if [ -d "/sys/devices/system/cpu/cpu$i/cpufreq" ]; then
+                echo "$hw_max" | sudo tee "/sys/devices/system/cpu/cpu$i/cpufreq/scaling_max_freq" > /dev/null
+                echo powersave | sudo tee "/sys/devices/system/cpu/cpu$i/cpufreq/scaling_governor" > /dev/null
+            fi
+        done
+        echo "CPU Mode: Full Eco (All online threads @ 1.2 GHz locked)"
+        show_status
+        ;;
+    base|noboost|chill|2.3)
+        [ -f /sys/devices/system/cpu/intel_pstate/no_turbo ] && echo 1 | sudo tee /sys/devices/system/cpu/intel_pstate/no_turbo > /dev/null 2>&1
+        for ((i=0; i<total_possible; i++)); do
+            if [ -d "/sys/devices/system/cpu/cpu$i/cpufreq" ]; then
+                echo 2300000 | sudo tee "/sys/devices/system/cpu/cpu$i/cpufreq/scaling_max_freq" > /dev/null
+                echo schedutil | sudo tee "/sys/devices/system/cpu/cpu$i/cpufreq/scaling_governor" > /dev/null
+            fi
+        done
+        echo "CPU Mode: Base / No Boost (All online threads on Schedutil @ 1.2-2.3 GHz, 0% Turbo)"
+        show_status
+        ;;
+    split)
+        [ -f /sys/devices/system/cpu/intel_pstate/no_turbo ] && echo 0 | sudo tee /sys/devices/system/cpu/intel_pstate/no_turbo > /dev/null 2>&1
+        get_split_masks "$2"
+        
+        IFS=',' read -r -a fast_cpus <<< "$FAST_MASK"
+        IFS=',' read -r -a eco_cpus <<< "$ECO_MASK"
+
+        for c in "${fast_cpus[@]}"; do
+            echo "$hw_max" | sudo tee "/sys/devices/system/cpu/cpu$c/cpufreq/scaling_max_freq" > /dev/null
+            echo schedutil | sudo tee "/sys/devices/system/cpu/cpu$c/cpufreq/scaling_governor" > /dev/null
+        done
+        for c in "${eco_cpus[@]}"; do
+            echo "$hw_max" | sudo tee "/sys/devices/system/cpu/cpu$c/cpufreq/scaling_max_freq" > /dev/null
+            echo powersave | sudo tee "/sys/devices/system/cpu/cpu$c/cpufreq/scaling_governor" > /dev/null
+        done
+        
+        echo "CPU Mode: Split ($FAST_PHYS_COUNT Physical Cores @ Schedutil up to 3.8GHz, $ECO_PHYS_COUNT Physical Cores @ Powersave 1.2GHz)"
+        show_status
+        ;;
+    fast|performance)
+        [ -f /sys/devices/system/cpu/intel_pstate/no_turbo ] && echo 0 | sudo tee /sys/devices/system/cpu/intel_pstate/no_turbo > /dev/null 2>&1
+        for ((i=0; i<total_possible; i++)); do
+            if [ -d "/sys/devices/system/cpu/cpu$i/cpufreq" ]; then
+                echo "$hw_max" | sudo tee "/sys/devices/system/cpu/cpu$i/cpufreq/scaling_max_freq" > /dev/null
+                echo schedutil | sudo tee "/sys/devices/system/cpu/cpu$i/cpufreq/scaling_governor" > /dev/null
+            fi
+        done
+        echo "CPU Mode: Full Performance (All online threads on Schedutil up to 3.8 GHz)"
+        show_status
+        ;;
+    pin)
+        pin_processes "$2" "$3"
+        ;;
+    status)
+        show_status
+        ;;
+    *)
+        echo "Usage: cpu-profile [cores <N|all>|ht <on|off>|fast|base|eco|split [N]|status|pin [eco|fast|all]]"
+        echo ""
+        echo "Hardware Control (No Reboot Needed!):"
+        echo "  cpu-profile cores <N>     : Sets active physical cores to N (e.g. 10 or 12), power-gates the rest to 0W"
+        echo "  cpu-profile cores all     : Restores all 18 physical cores online"
+        echo "  cpu-profile ht [on|off]   : Toggles Hyperthreading on/off on the fly"
+        echo ""
+        echo "Governor Profiles:"
+        echo "  cpu-profile fast          : All online threads on Schedutil (Full Turbo up to 3.8 GHz)"
+        echo "  cpu-profile base          : All online threads on Schedutil capped @ 2.3 GHz (No Boost, cool & quiet)"
+        echo "  cpu-profile eco           : All online threads on Powersave (1.2 GHz locked, lowest power)"
+        echo "  cpu-profile split [N]     : N Fast Physical Cores + remaining Eco Cores"
+        echo "  cpu-profile status        : Show current core online/offline status and live MHz"
+        echo ""
+        echo "Instant Thread Pinning (Auto-detects Game, No Sudo Needed!):"
+        echo "  game-pin fast             : Moves ALL threads of the game to Fast Cores"
+        echo "  game-pin eco              : Moves ALL threads of the game to Eco Cores"
+        echo "  game-pin all              : Unpins game back to all online threads"
+        ;;
+esac

@@ -2,7 +2,7 @@
 
 Dynamic, zero-reboot Linux CPU core hotplugging, governor manager, and automated game process pinner.
 
-Tailored for high-core systems, multi-socket workstations, modern AMD (Ryzen / Threadripper / EPYC) and Intel (Core / Xeon) platforms where dynamic workload switching between high-frequency gaming, heavy multi-threading, and ultra-low power idle is required without touching BIOS settings.
+Built for modern AMD (Ryzen / Threadripper / EPYC) and Intel (Core / Xeon) platforms, with primary reference tuning and validation on the **Intel Xeon E5-2696 v3** (18C/36T Haswell-EP with Turbo Boost Unlock) on X99. It enables dynamic workload switching between high-frequency gaming, heavy multi-threading, and ultra-low power idle without touching BIOS settings.
 
 ---
 
@@ -133,6 +133,26 @@ CPU 11 (Core --)  [OFFLINE]   (Power-Gated)    0 MHz (0W Sleep)
 * **Frequency Caps & Turbo Control:** Modifies `/sys/devices/system/cpu/cpu*/cpufreq/scaling_max_freq` and toggles hardware boost via `intel_pstate/no_turbo` (Intel) or `cpufreq/boost` (AMD).
 * **Affinity Masking:** Employs `sched_setaffinity(2)` via `taskset -a` across the complete task list of detected process trees (`/proc/$PID/task/*`).
 * **Sibling Pairing:** Reads `/sys/devices/system/cpu/cpu*/topology/thread_siblings_list` to ensure logical hyperthreads stay grouped with their parent physical cores.
+
+---
+
+## Hardware Compatibility & Reference Testbed
+
+### Universal Compatibility
+`cpu-profile` and `game-pin` work on any modern Linux kernel (5.x / 6.x+) and x86_64 architecture:
+* **Intel**: Core (i3/i5/i7/i9) and Xeon (E5 v3/v4, Scalable) utilizing `intel_pstate` or `acpi-cpufreq`.
+* **AMD**: Ryzen, Threadripper, and EPYC utilizing `amd-pstate` or `acpi-cpufreq` (with `cpufreq/boost` control).
+* **Linux Kernel Standard**: CPU hotplugging (`/sys/devices/system/cpu/cpu*/online`), SMT control (`/sys/devices/system/cpu/smt/control`), and affinity management via `taskset -a` are kernel-level POSIX/sysfs standards.
+
+### Reference Hardware: Intel Xeon E5-2696 v3
+While universally compatible, this tool was designed, optimized, and daily-driven on the **Intel Xeon E5-2696 v3** (18 Cores / 36 Threads, Haswell-EP, 145W TDP) on an X99 motherboard with Turbo Boost Unlock (Hack TBU):
+* **Base Clock**: 2.30 GHz (auto-detected, used in `cpu-profile base`)
+* **Unlocked All-Core Turbo**: 3.80 GHz
+* **Why Core Hotplugging Matters Here**:
+  * Under a full 18-core AVX/gaming load, the package power hits the 145W PL1 limit, causing clocks to throttle down to ~2.8–3.1 GHz.
+  * Running `cpu-profile cores 10` or `12` gates the unused cores into 0W C6 deep sleep, freeing up the entire 145W power envelope for the active cores.
+  * Result: **Locked 3.80 GHz all-core clock in gaming** without power-limit throttling or excessive heat.
+  * When multi-threaded rendering or compilation is required, `cpu-profile cores all` instantly brings back all 18 cores (36 threads) without restarting the PC.
 
 ---
 

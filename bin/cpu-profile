@@ -327,7 +327,19 @@ case "$1" in
         echo "CPU Mode: Split ($FAST_PHYS_COUNT Physical Cores @ Schedutil, $ECO_PHYS_COUNT Physical Cores @ Powersave)"
         show_status
         ;;
-    fast|performance)
+    max|perf|performance)
+        set_turbo 1
+        for ((i=0; i<total_possible; i++)); do
+            if [ -d "/sys/devices/system/cpu/cpu$i/cpufreq" ]; then
+                echo "$hw_max" | sudo tee "/sys/devices/system/cpu/cpu$i/cpufreq/scaling_max_freq" > /dev/null
+                echo performance | sudo tee "/sys/devices/system/cpu/cpu$i/cpufreq/scaling_governor" > /dev/null
+            fi
+        done
+        local max_ghz=$(awk -v m="$hw_max" 'BEGIN {printf "%.1f GHz", m/1000000}')
+        echo "CPU Mode: Maximum Performance (All online threads locked to performance governor @ $max_ghz)"
+        show_status
+        ;;
+    fast)
         set_turbo 1
         for ((i=0; i<total_possible; i++)); do
             if [ -d "/sys/devices/system/cpu/cpu$i/cpufreq" ]; then

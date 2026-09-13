@@ -132,6 +132,15 @@ CPU 11 (Core --)  [OFFLINE]   (Power-Gated)    0 MHz (0W Sleep)
 
 ---
 
+## Known Conflicts & Compatibility Notes
+
+> [!WARNING]
+> **CoreCtrl CPU Control Conflict:**  
+> If you have [CoreCtrl](https://gitlab.com/corectrl/corectrl) running with **CPU control enabled** in its profile, it will continuously re-apply its own governor and frequency limits, immediately overriding changes made by `cpu-profile`.  
+> **Fix:** In CoreCtrl, open your active profile(s) and **disable CPU control** (use CoreCtrl for GPU only). This lets `cpu-profile` manage your CPU without background conflicts.
+
+---
+
 ## Uninstallation
 
 From the command line:

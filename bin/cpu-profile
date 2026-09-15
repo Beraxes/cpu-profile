@@ -163,12 +163,9 @@ set_active_cores() {
     
     echo "Setting active physical cores to $target (power-gating $((max_phys - target)) physical cores to 0W)..."
     
-    # Enable target cores
-    for ((c=0; c<target; c++)); do
-        [ -f "/sys/devices/system/cpu/cpu$c/online" ] && echo 1 | sudo tee "/sys/devices/system/cpu/cpu$c/online" > /dev/null 2>&1
-        for sib in $(cat "/sys/devices/system/cpu/cpu$c/topology/thread_siblings_list" 2>/dev/null | tr "," " "); do
-            [ -f "/sys/devices/system/cpu/cpu$sib/online" ] && echo 1 | sudo tee "/sys/devices/system/cpu/cpu$sib/online" > /dev/null 2>&1
-        done
+    # Bring all cores online first so kernel populates complete sibling masks
+    for g in /sys/devices/system/cpu/cpu*/online; do
+        echo 1 | sudo tee "$g" > /dev/null 2>&1
     done
     
     # Offline remaining cores

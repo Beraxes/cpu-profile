@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 
+# Enforce C locale so tools like lscpu and number parsing behave consistently across languages
+export LC_ALL=C
+
 # Total possible logical threads present in hardware/sysfs
 total_possible=$(ls -d /sys/devices/system/cpu/cpu[0-9]* | wc -l)
 threads_per_core=$(lscpu | grep "Thread(s) per core:" | awk '{print $NF}')
@@ -162,6 +165,7 @@ set_active_cores() {
     
     # Enable target cores
     for ((c=0; c<target; c++)); do
+        [ -f "/sys/devices/system/cpu/cpu$c/online" ] && echo 1 | sudo tee "/sys/devices/system/cpu/cpu$c/online" > /dev/null 2>&1
         for sib in $(cat "/sys/devices/system/cpu/cpu$c/topology/thread_siblings_list" 2>/dev/null | tr "," " "); do
             [ -f "/sys/devices/system/cpu/cpu$sib/online" ] && echo 1 | sudo tee "/sys/devices/system/cpu/cpu$sib/online" > /dev/null 2>&1
         done
